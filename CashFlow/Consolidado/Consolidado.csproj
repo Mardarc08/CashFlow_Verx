@@ -7,6 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
+    <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
     <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.33.0" />
     <PackageReference Include="MediatR" Version="14.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
@@ -22,14 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Api\Endpoints\" />
-    <Folder Include="Application\Consolidado\" />
-    <Folder Include="Application\Events\" />
-    <Folder Include="Domain\Entities\" />
-    <Folder Include="Domain\Interface\" />
-    <Folder Include="Infrastructure\Cache\" />
     <Folder Include="Infrastructure\Messaging\" />
-    <Folder Include="Infrastructure\Persistence\" />
   </ItemGroup>
 
 </Project>

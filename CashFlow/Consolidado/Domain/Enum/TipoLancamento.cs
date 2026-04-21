@@ -1,4 +1,4 @@
-﻿namespace Lancamentos.Domain.Enum
+﻿namespace Consolidado.Domain.Enum
 {
     public enum TipoLancamento
     {
