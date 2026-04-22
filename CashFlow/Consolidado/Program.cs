@@ -4,7 +4,6 @@ using Consolidado.Domain.Interface;
 using Consolidado.Infrastructure.Cache;
 using Consolidado.Infrastructure.Persistence;
 using Google.Cloud.PubSub.V1;
-using HealthChecks.NpgSql;
 using HealthChecks.Redis;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -18,8 +17,34 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 // Banco de Dados
+var sqlConnectionString = String.Empty;
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddEnvironmentVariables().AddJsonFile("appsettings.Development.json");
+    sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+else
+{
+    //Alterar para ler a string de conexão do ambiente de produção, por exemplo, usando variáveis de ambiente
+    sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+
+
+// PostegreSQL
+//builder.Services.AddDbContext<AppDbContext>(options =>
+//    options.UseNpgsql(sqlConnectionString));
+
+
+// MSSQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(sqlConnectionString,
+    sqlServerOptionsAction: sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 10,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null); // You can specify specific error numbers to retry on if needed
+    }));
 
 // Repositório
 builder.Services.AddScoped<IConsolidadoRepository, ConsolidadoRepository>();
@@ -49,19 +74,19 @@ builder.Services.AddHostedService<LancamentoRegistradoConsumer>();
 // ── Autenticação JWT ─────────────────────────────────────────────────────────
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
-{
-options.TokenValidationParameters = new TokenValidationParameters
-{
-ValidateIssuer = true,
-ValidateAudience = true,
-ValidateLifetime = true,
-ValidateIssuerSigningKey = true,
-ValidIssuer = builder.Configuration["Jwt:Issuer"],
-ValidAudience = builder.Configuration["Jwt:Audience"],
-IssuerSigningKey = new SymmetricSecurityKey(
-        System.Text.Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
-};
-});
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+        };
+    });
 
 builder.Services.AddAuthorization();
 
@@ -81,9 +106,12 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ── Health Checks ────────────────────────────────────────────────────────────
+//builder.Services.AddHealthChecks()
+//    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!)
+//    .AddRedis(builder.Configuration["Redis:ConnectionString"]!);
+
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!)
-    .AddRedis(builder.Configuration["Redis:ConnectionString"]!);
+    .AddSqlServer(sqlConnectionString).AddRedis(builder.Configuration["Redis:ConnectionString"]!);
 
 var app = builder.Build();
 
@@ -104,9 +132,9 @@ app.MapHealthChecks("/health");
 // ── Migrations automáticas (dev) ─────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
 {
-using var scope = app.Services.CreateScope();
-var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-db.Database.Migrate();
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
 }
 
 app.Run();

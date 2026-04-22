@@ -10,15 +10,40 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Text;
-using HealthChecks.NpgSql;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
 // Banco de Dados
+var sqlConnectionString = String.Empty;
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddEnvironmentVariables().AddJsonFile("appsettings.Development.json");
+    sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+else
+{
+    //Alterar para ler a string de conexão do ambiente de produção, por exemplo, usando variáveis de ambiente
+    sqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+}
+
+
+// PostegreSQL
+//builder.Services.AddDbContext<AppDbContext>(options =>
+//    options.UseNpgsql(sqlConnectionString));
+
+
+// MSSQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(sqlConnectionString,
+    sqlServerOptionsAction: sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 10,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null); // You can specify specific error numbers to retry on if needed
+    }));
 
 // Repositórios
 builder.Services.AddScoped<ILancamentoRepository, LancamentoRepository>();
@@ -77,7 +102,7 @@ builder.Services.AddSwaggerGen(c =>
 
 // Health Checks
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!);
+    .AddSqlServer(sqlConnectionString);
 
 var app = builder.Build();
 
@@ -96,11 +121,11 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ── Endpoints ────────────────────────────────────────────────────────────────
+// Endpoints 
 app.MapLancamentoEndpoints();
 app.MapHealthChecks("/health");
 
-// ── Migrations automáticas (dev) ─────────────────────────────────────────────
+// Migrations automáticas (dev) 
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();

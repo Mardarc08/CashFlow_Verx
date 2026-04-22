@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="Consolidado/Consolidado.csproj" />
+  <Project Path="ConsolidadoTest/ConsolidadoTest.csproj" />
   <Project Path="Lancamentos/Lancamentos.csproj" />
+  <Project Path="Testes/Testes.csproj" />
 </Solution>
