@@ -53,3 +53,5 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /CashFlow/.vs*/
+/CashFlow_app/cashflow-dashboard/node_modules
+/CashFlow_app/cashflow-dashboard/.angular/cache/17.3.17

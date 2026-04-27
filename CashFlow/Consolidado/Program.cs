@@ -3,7 +3,6 @@ using Consolidado.Application.Events;
 using Consolidado.Domain.Interface;
 using Consolidado.Infrastructure.Cache;
 using Consolidado.Infrastructure.Persistence;
-using Google.Cloud.PubSub.V1;
 using HealthChecks.Redis;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StackExchange.Redis;
 using System.Text;
+using Confluent.Kafka;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,14 +60,19 @@ builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
 
-// Pub/Sub Subscriber
-builder.Services.AddSingleton(sp =>
+// Kafka Consumer
+var kafkaConfig = new ConsumerConfig
 {
-    var projectId = builder.Configuration["PubSub:ProjectId"];
-    var subscriptionId = builder.Configuration["PubSub:SubscriptionId"];
-    var subscriptionName = SubscriptionName.FromProjectSubscription(projectId!, subscriptionId!);
-    return SubscriberClient.CreateAsync(subscriptionName).GetAwaiter().GetResult();
-});
+    BootstrapServers = builder.Configuration["Kafka:BootstrapServers"],
+    GroupId = builder.Configuration["Kafka:GroupId"] ?? "consolidado-consumer-group",
+    AutoOffsetReset = AutoOffsetReset.Earliest,
+    EnableAutoCommit = false,
+    StatisticsIntervalMs = 5000,
+    SessionTimeoutMs = 6000,
+};
+
+builder.Services.AddSingleton<IConsumer<string, string>>(sp =>
+    new ConsumerBuilder<string, string>(kafkaConfig).Build());
 
 builder.Services.AddHostedService<LancamentoRegistradoConsumer>();
 

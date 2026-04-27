@@ -10,7 +10,6 @@ namespace Lancamentos.Api.Endpoints
         public static void MapLancamentoEndpoints(this WebApplication app)
         {
             var group = app.MapGroup("/api/lancamentos")
-                .RequireAuthorization()
                 .WithTags("Lançamentos");
 
             // POST /api/lancamentos

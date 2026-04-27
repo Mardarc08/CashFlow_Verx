@@ -1,6 +1,6 @@
 <Solution>
+  <Project Path="Consolidado.Test/Consolidado.Test.csproj" Id="d2bbe74b-dc35-42ff-89a0-0905d7d57722" />
   <Project Path="Consolidado/Consolidado.csproj" />
-  <Project Path="ConsolidadoTest/ConsolidadoTest.csproj" />
+  <Project Path="Lancamentos.Test/Lancamentos.Test.csproj" Id="11bcf9e4-080d-41ca-a57c-e0d96b04ab65" />
   <Project Path="Lancamentos/Lancamentos.csproj" />
-  <Project Path="Testes/Testes.csproj" />
 </Solution>

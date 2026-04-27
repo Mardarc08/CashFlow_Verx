@@ -14,12 +14,12 @@ namespace Lancamentos.Infrastructure.Data
             modelBuilder.Entity<Lancamento>(e =>
             {
                 e.HasKey(x => x.Id);
-                e.Property(x => x.Valor).HasColumnType("numeric(18,2)").IsRequired();
+                e.Property(x => x.Valor).HasColumnType("decimal(18,2)").IsRequired();
                 e.Property(x => x.Tipo).IsRequired();
                 e.Property(x => x.MeioLancamento);
                 e.Property(x => x.Descricao).HasMaxLength(255).IsRequired();
-                e.Property(x => x.Data).IsRequired();
-                e.Property(x => x.DataCriacao).IsRequired();
+                e.Property(x => x.Data).HasColumnType("date").IsRequired();
+                e.Property(x => x.DataCriacao).HasColumnType("datetime2").IsRequired();
                 e.HasIndex(x => x.Data); // índice para queries por data
             });
         }

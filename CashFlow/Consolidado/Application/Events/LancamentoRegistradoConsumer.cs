@@ -1,67 +1,107 @@
-﻿using Consolidado.Domain.Entities;
+﻿using Confluent.Kafka;
+using Consolidado.Domain.Entities;
 using Consolidado.Domain.Enum;
 using Consolidado.Domain.Interface;
 using Consolidado.Infrastructure.Cache;
-using Google.Cloud.PubSub.V1;
 using System.Text.Json;
 
 namespace Consolidado.Application.Events
 {
-    // Evento recebido do serviço de Lançamentos via Pub/Sub
+    // Evento recebido do serviço de Lançamentos via Kafka
     public record LancamentoRegistradoEvent(
         Guid LancamentoId,
         decimal Valor,
         TipoLancamento Tipo,
-        MeioLancamento MeioLancamento,
         DateOnly Data,
         DateTime OcorridoEm
     );
 
     public class LancamentoRegistradoConsumer : BackgroundService
     {
-        private readonly SubscriberClient _subscriber;
+        private readonly IConsumer<string, string> _consumer;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IConsolidadoCache _cache;
         private readonly ILogger<LancamentoRegistradoConsumer> _logger;
+        private readonly string _topicName;
 
         public LancamentoRegistradoConsumer(
-            SubscriberClient subscriber,
+            IConsumer<string, string> consumer,
             IServiceScopeFactory scopeFactory,
             IConsolidadoCache cache,
-            ILogger<LancamentoRegistradoConsumer> logger)
+            ILogger<LancamentoRegistradoConsumer> logger,
+            IConfiguration configuration)
         {
-            _subscriber = subscriber;
+            _consumer = consumer;
             _scopeFactory = scopeFactory;
             _cache = cache;
             _logger = logger;
+            _topicName = configuration["Kafka:Topics:LancamentoRegistrado"] ?? "lancamento-registrado";
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Consumer Pub/Sub iniciado.");
+            _logger.LogInformation("Kafka Consumer iniciado para o tópico '{TopicName}'.", _topicName);
 
-            await _subscriber.StartAsync(async (message, ct) =>
+            _consumer.Subscribe(_topicName);
+
+            try
             {
-                try
+                while (!stoppingToken.IsCancellationRequested)
                 {
-                    var json = message.Data.ToStringUtf8();
-                    var evento = JsonSerializer.Deserialize<LancamentoRegistradoEvent>(json);
-
-                    if (evento is null)
+                    try
                     {
-                        _logger.LogWarning("Mensagem inválida recebida. MessageId: {Id}", message.MessageId);
-                        return SubscriberClient.Reply.Nack; // reencaminha para DLQ após N tentativas
-                    }
+                        var result = _consumer.Consume(stoppingToken);
 
-                    await ProcessarEventoAsync(evento, ct);
-                    return SubscriberClient.Reply.Ack;
+                        if (result.IsPartitionEOF)
+                            continue;
+
+                        await ProcessarMensagemAsync(result, stoppingToken);
+                        _consumer.Commit(result);
+                    }
+                    catch (ConsumeException ex)
+                    {
+                        _logger.LogError(ex, "Erro ao consumir mensagem do Kafka.");
+                    }
                 }
-                catch (Exception ex)
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Consumer cancelado.");
+            }
+            finally
+            {
+                _consumer.Close();
+            }
+        }
+
+        private async Task ProcessarMensagemAsync(ConsumeResult<string, string> result, CancellationToken ct)
+        {
+            try
+            {
+                var evento = JsonSerializer.Deserialize<LancamentoRegistradoEvent>(result.Message.Value);
+
+                if (evento is null)
                 {
-                    _logger.LogError(ex, "Erro ao processar mensagem {Id}.", message.MessageId);
-                    return SubscriberClient.Reply.Nack; // Pub/Sub vai retentar automaticamente
+                    _logger.LogWarning("Mensagem inválida recebida. Chave: {Chave}, Offset: {Offset}", 
+                        result.Message.Key, result.Offset);
+                    return;
                 }
-            });
+
+                await ProcessarEventoAsync(evento, ct);
+
+                _logger.LogInformation(
+                    "Mensagem processada com sucesso. Chave: {Chave}, Offset: {Offset}", 
+                    result.Message.Key, result.Offset);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Erro ao deserializar mensagem. Chave: {Chave}", result.Message.Key);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao processar mensagem. Chave: {Chave}", result.Message.Key);
+                throw; // Retentar a mensagem
+            }
         }
 
         private async Task ProcessarEventoAsync(LancamentoRegistradoEvent evento, CancellationToken ct)
@@ -93,7 +133,9 @@ namespace Consolidado.Application.Events
 
         public override async Task StopAsync(CancellationToken ct)
         {
-            await _subscriber.StopAsync(ct);
+            _logger.LogInformation("Parando Kafka Consumer.");
+            _consumer.Unsubscribe();
+            _consumer.Dispose();
             await base.StopAsync(ct);
         }
     }

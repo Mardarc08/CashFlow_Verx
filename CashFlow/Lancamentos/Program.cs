@@ -4,16 +4,17 @@ using Lancamentos.Domain.Interfaces;
 using Lancamentos.Infrastructure.Data;
 using Lancamentos.Infrastructure.Messaging;
 using FluentValidation;
-using Google.Cloud.PubSub.V1;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Text;
+using Confluent.Kafka;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
 
 // Banco de Dados
 var sqlConnectionString = String.Empty;
@@ -42,7 +43,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         sqlOptions.EnableRetryOnFailure(
             maxRetryCount: 10,
             maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null); // You can specify specific error numbers to retry on if needed
+            errorNumbersToAdd: null);
     }));
 
 // Repositórios
@@ -55,16 +56,8 @@ builder.Services.AddMediatR(cfg =>
 // FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
-// Pub/Sub
-builder.Services.AddSingleton(sp =>
-{
-    var projectId = builder.Configuration["PubSub:ProjectId"];
-    var topicId = builder.Configuration["PubSub:TopicId"];
-    var topicName = TopicName.FromProjectTopic(projectId!, topicId!);
-    return PublisherClient.CreateAsync(topicName).GetAwaiter().GetResult();
-});
-builder.Services.AddSingleton<IPubSubPublisher, PubSubPublisher>();
-
+// Kafka Producer
+builder.Services.AddSingleton<IKafkaProducer, KafkaProducer>();
 
 // Autenticação JWT
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -108,7 +101,7 @@ var app = builder.Build();
 
 
 // Middlewares
-app.UseMiddleware<ExceptionMiddleware>();
+//app.UseMiddleware<ExceptionMiddleware>();
 
 
 // Configure the HTTP request pipeline.
@@ -128,9 +121,16 @@ app.MapHealthChecks("/health");
 // Migrations automáticas (dev) 
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    try{
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
+    }
+    catch(Exception ex)
+    {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Erro ao aplicar migrações automáticas");
+    }
 }
 
 app.Run();

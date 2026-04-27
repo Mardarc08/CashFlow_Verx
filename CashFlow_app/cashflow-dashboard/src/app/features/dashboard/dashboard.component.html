@@ -1,0 +1,314 @@
+<div class="dashboard">
+
+  <!-- ── Header ────────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header__brand">
+      <div class="header__logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="8" fill="#1a56db"/>
+          <path d="M8 14h4l2-6 3 12 2-6h3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="header__title">CashFlow</span>
+      </div>
+      <span class="header__date">{{ hoje() | date:'EEEE, d \'de\' MMMM':'':'pt-BR' }}</span>
+    </div>
+    <button class="btn btn--ghost btn--sm" (click)="carregarDados()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/>
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M3 21v-5h5"/>
+      </svg>
+      Atualizar
+    </button>
+  </header>
+
+  <main class="main">
+
+    <!-- ── Cards de Resumo ────────────────────────────────────────────── -->
+    <section class="summary">
+
+      <div class="card card--metric" [class.skeleton]="carregandoConsolidado()">
+        <div class="card__icon card__icon--green">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12l7-7 7 7"/>
+          </svg>
+        </div>
+        <div class="card__body">
+          <span class="card__label">Total Créditos</span>
+          <span class="card__value card__value--green">
+            {{ (consolidadoHoje()?.totalCreditos ?? 0) | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+          </span>
+        </div>
+        <div class="card__bar card__bar--green"
+             [style.width.%]="barraProgresso(consolidadoHoje()?.totalCreditos ?? 0,
+               (consolidadoHoje()?.totalCreditos ?? 0) + (consolidadoHoje()?.totalDebitos ?? 0))">
+        </div>
+      </div>
+
+      <div class="card card--metric" [class.skeleton]="carregandoConsolidado()">
+        <div class="card__icon card__icon--red">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 19V5M5 12l7 7 7-7"/>
+          </svg>
+        </div>
+        <div class="card__body">
+          <span class="card__label">Total Débitos</span>
+          <span class="card__value card__value--red">
+            {{ (consolidadoHoje()?.totalDebitos ?? 0) | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+          </span>
+        </div>
+        <div class="card__bar card__bar--red"
+             [style.width.%]="barraProgresso(consolidadoHoje()?.totalDebitos ?? 0,
+               (consolidadoHoje()?.totalCreditos ?? 0) + (consolidadoHoje()?.totalDebitos ?? 0))">
+        </div>
+      </div>
+
+      <div class="card card--metric card--saldo" [class.skeleton]="carregandoConsolidado()">
+        <div class="card__icon" [class.card__icon--blue]="saldoPositivo()" [class.card__icon--orange]="!saldoPositivo()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="7" width="20" height="14" rx="2"/>
+            <path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z"/>
+            <circle cx="12" cy="14" r="2"/>
+          </svg>
+        </div>
+        <div class="card__body">
+          <span class="card__label">Saldo Final do Dia</span>
+          <span class="card__value" [class.card__value--blue]="saldoPositivo()" [class.card__value--orange]="!saldoPositivo()">
+            {{ (consolidadoHoje()?.saldoFinal ?? 0) | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+          </span>
+        </div>
+        @if (!consolidadoHoje()) {
+          <span class="card__empty-hint">Nenhum lançamento hoje</span>
+        }
+      </div>
+
+    </section>
+
+    <!-- ── Grid Principal ─────────────────────────────────────────────── -->
+    <div class="grid">
+
+      <!-- Coluna Esquerda -->
+      <div class="grid__col grid__col--left">
+
+        <!-- Novo Lançamento -->
+        <div class="card card--form">
+          <div class="card__header">
+            <h2 class="card__title">Novo Lançamento</h2>
+          </div>
+
+          @if (mensagemSucesso()) {
+            <div class="alert alert--success">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6 9 17l-5-5"/>
+              </svg>
+              {{ mensagemSucesso() }}
+            </div>
+          }
+          @if (mensagemErro()) {
+            <div class="alert alert--error">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+              </svg>
+              {{ mensagemErro() }}
+            </div>
+          }
+
+          <form [formGroup]="form" (ngSubmit)="submeterLancamento()" class="form">
+
+            <!-- Tipo toggle -->
+            <div class="form__field">
+              <label class="form__label">Tipo</label>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn"
+                        [class.toggle-btn--active-green]="form.get('tipo')?.value == TipoLancamento.Credito"
+                        (click)="form.get('tipo')?.setValue(TipoLancamento.Credito)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 5v14M5 12l7-7 7 7"/>
+                  </svg>
+                  Crédito
+                </button>
+                <button type="button" class="toggle-btn"
+                        [class.toggle-btn--active-red]="form.get('tipo')?.value == TipoLancamento.Debito"
+                        (click)="form.get('tipo')?.setValue(TipoLancamento.Debito)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 19V5M5 12l7 7 7-7"/>
+                  </svg>
+                  Débito
+                </button>
+              </div>
+            </div>
+
+            <div class="form__row">
+              <div class="form__field">
+                <label class="form__label" for="valor">Valor (R$)</label>
+                <input id="valor" type="number" step="0.01" min="0.01"
+                       class="form__input" formControlName="valor" placeholder="0,00"
+                       [class.form__input--error]="form.get('valor')?.invalid && form.get('valor')?.touched">
+                @if (form.get('valor')?.invalid && form.get('valor')?.touched) {
+                  <span class="form__error">Informe um valor maior que zero</span>
+                }
+              </div>
+
+              <div class="form__field">
+                <label class="form__label" for="data">Data</label>
+                <input id="data" type="date" class="form__input"
+                       formControlName="data"
+                       [class.form__input--error]="form.get('data')?.invalid && form.get('data')?.touched">
+              </div>
+            </div>
+
+            <div class="form__field">
+              <label class="form__label" for="descricao">Descrição</label>
+              <input id="descricao" type="text" class="form__input"
+                     formControlName="descricao" placeholder="Ex: Venda à vista, Pagamento fornecedor..."
+                     [class.form__input--error]="form.get('descricao')?.invalid && form.get('descricao')?.touched">
+              @if (form.get('descricao')?.invalid && form.get('descricao')?.touched) {
+                <span class="form__error">Descrição obrigatória (máx. 255 caracteres)</span>
+              }
+            </div>
+            <div class="form_field">
+              <label class="form__label" for="meioLancamento">Meio de Lançamento</label>
+              <select id="meioLancamento" class="form__input" formControlName="meioLancamento">
+                <option [ngValue]="null">Selecione (opcional)</option>
+                <option *ngFor="let meio of MeioLancamento | keyvalue" [ngValue]="meio.value">{{ meio.key }}</option>
+              </select>
+            </div>
+
+            <button type="submit" class="btn btn--primary btn--full"
+                    [disabled]="salvandoLancamento()">
+              @if (salvandoLancamento()) {
+                <span class="spinner"></span> Registrando...
+              } @else {
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Registrar Lançamento
+              }
+            </button>
+          </form>
+        </div>
+
+        <!-- Histórico -->
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">Histórico — Últimos 7 dias</h2>
+          </div>
+
+          @if (carregandoHistorico()) {
+            <div class="loading-rows">
+              @for (i of [1,2,3,4,5]; track i) {
+                <div class="loading-row skeleton"></div>
+              }
+            </div>
+          } @else if (historico().length === 0) {
+            <div class="empty-state">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+              </svg>
+              <p>Nenhum consolidado encontrado</p>
+            </div>
+          } @else {
+            <div class="historico-list">
+              @for (item of historico(); track item.data) {
+                <div class="historico-item">
+                  <div class="historico-item__date">
+                    <span class="historico-item__day">{{ item.data | date:'dd':'':'pt-BR' }}</span>
+                    <span class="historico-item__month">{{ item.data | date:'MMM':'':'pt-BR' }}</span>
+                  </div>
+                  <div class="historico-item__bars">
+                    <div class="mini-bar">
+                      <span class="mini-bar__label">Créd.</span>
+                      <div class="mini-bar__track">
+                        <div class="mini-bar__fill mini-bar__fill--green"
+                             [style.width.%]="barraProgresso(item.totalCreditos, item.totalCreditos + item.totalDebitos)">
+                        </div>
+                      </div>
+                      <span class="mini-bar__value">{{ item.totalCreditos | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</span>
+                    </div>
+                    <div class="mini-bar">
+                      <span class="mini-bar__label">Déb.</span>
+                      <div class="mini-bar__track">
+                        <div class="mini-bar__fill mini-bar__fill--red"
+                             [style.width.%]="barraProgresso(item.totalDebitos, item.totalCreditos + item.totalDebitos)">
+                        </div>
+                      </div>
+                      <span class="mini-bar__value">{{ item.totalDebitos | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</span>
+                    </div>
+                  </div>
+                  <div class="historico-item__saldo"
+                       [class.historico-item__saldo--pos]="item.saldoFinal >= 0"
+                       [class.historico-item__saldo--neg]="item.saldoFinal < 0">
+                    {{ item.saldoFinal | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+      </div>
+
+      <!-- Coluna Direita — Tabela de Lançamentos -->
+      <div class="grid__col grid__col--right">
+        <div class="card card--table">
+          <div class="card__header">
+            <h2 class="card__title">Lançamentos de Hoje</h2>
+            <span class="badge">{{ lancamentos().length }}</span>
+          </div>
+
+          @if (carregandoLancamentos()) {
+            <div class="loading-rows">
+              @for (i of [1,2,3,4,5]; track i) {
+                <div class="loading-row skeleton"></div>
+              }
+            </div>
+          } @else if (lancamentos().length === 0) {
+            <div class="empty-state">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+              </svg>
+              <p>Nenhum lançamento hoje</p>
+              <span>Use o formulário ao lado para registrar</span>
+            </div>
+          } @else {
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Descrição</th>
+                    <th>Tipo</th>
+                    <th class="text-right">Valor</th>
+                    <th>Horário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (l of lancamentos(); track l.id) {
+                    <tr class="table__row">
+                      <td class="table__desc">{{ l.descricao }}</td>
+                      <td>
+                        <span class="chip"
+                              [class.chip--green]="l.tipo === TipoLancamento.Credito"
+                              [class.chip--red]="l.tipo === TipoLancamento.Debito">
+                          {{ l.tipo === TipoLancamento.Credito ? '↑ Crédito' : '↓ Débito' }}
+                        </span>
+                      </td>
+                      <td class="text-right table__value"
+                          [class.text-green]="l.tipo === TipoLancamento.Credito"
+                          [class.text-red]="l.tipo === TipoLancamento.Debito">
+                        {{ l.tipo === TipoLancamento.Debito ? '-' : '+' }}{{ l.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                      </td>
+                      <td class="table__time">{{ l.criadoEm | date:'HH:mm':'':'pt-BR' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>

@@ -1,27 +1,27 @@
-﻿using FluentValidation;
-using Lancamentos.Application.Events;
+﻿using Lancamentos.Application.Events;
 using Lancamentos.Domain.Interfaces;
 using Lancamentos.Domain.Entities;
-using MediatR;
 using Lancamentos.Infrastructure.Messaging;
+using FluentValidation;
+using MediatR;
 
 namespace Lancamentos.Application.Lancamentos.RegistrarLancamento
 {
     public class RegistrarLancamentoHandler : IRequestHandler<RegistrarLancamentoCommand, RegistrarLancamentoResponse>
     {
         private readonly ILancamentoRepository _repository;
-        private readonly IPubSubPublisher _publisher;
+        private readonly IKafkaProducer _producer;
         private readonly IValidator<RegistrarLancamentoCommand> _validator;
         private readonly ILogger<RegistrarLancamentoHandler> _logger;
 
         public RegistrarLancamentoHandler(
             ILancamentoRepository repository,
-            IPubSubPublisher publisher,
+        IKafkaProducer producer,
             IValidator<RegistrarLancamentoCommand> validator,
             ILogger<RegistrarLancamentoHandler> logger)
         {
             _repository = repository;
-            _publisher = publisher;
+            _producer = producer;
             _validator = validator;
             _logger = logger;
         }
@@ -39,7 +39,8 @@ namespace Lancamentos.Application.Lancamentos.RegistrarLancamento
             // Persiste os dados
             await _repository.AdicionarLancamentoAsync(lancamento, cancellationToken);
 
-            // Publicar evento (fire-and-forget seguro — falha aqui não derruba o lançamento)
+
+            // 4. Publicar evento no Kafka
             try
             {
                 var evento = new LancamentoRegistradoEvent(
@@ -50,13 +51,13 @@ namespace Lancamentos.Application.Lancamentos.RegistrarLancamento
                     lancamento.Data,
                     DateTime.UtcNow);
 
-                await _publisher.PublicarAsync(evento, cancellationToken);
+                await _producer.PublicarAsync(evento, cancellationToken);
             }
             catch (Exception ex)
             {
-                // Log da falha mas não propaga — lançamento já foi persistido
-                // O consolidado pode ser recalculado via reconciliação
-                _logger.LogError(ex, "Falha ao publicar evento para o lançamento {Id}. Será reconciliado.", lancamento.Id);
+                // Lançamento já persistido — falha no Kafka não derruba a operação
+                // Pode ser reconciliado via replay do offset ou reprocessamento manual
+                _logger.LogError(ex, "Falha ao publicar evento Kafka para o lançamento {Id}.", lancamento.Id);
             }
 
             _logger.LogInformation("Lançamento {Id} registrado com sucesso.", lancamento.Id);
