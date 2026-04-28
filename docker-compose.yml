@@ -16,8 +16,8 @@ services:
       - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
-      - ./docker/sqlserver/init.sql:/docker-entrypoint-initdb/init.sql:ro
-      - ./docker/sqlserver/entrypoint.sh:/docker-entrypoint-initdb/entrypoint.sh:ro
+      - ./CashFlow/docker/sqlserver/init.sql:/docker-entrypoint-initdb/init.sql:ro
+      - ./CashFlow/docker/sqlserver/entrypoint.sh:/docker-entrypoint-initdb/entrypoint.sh:ro
     # Executa o SQL Server em background e roda o script de init na sequência
     command: >
       bash -c "
@@ -92,7 +92,7 @@ services:
   lancamentos:
     build:
       context: .
-      dockerfile: docker/lancamentos/Dockerfile
+      dockerfile: CashFlow/docker/lancamentos/Dockerfile
     container_name: cashflow-lancamentos
     ports:
       - "8080:8080"
@@ -114,7 +114,7 @@ services:
   consolidado:
     build:
       context: .
-      dockerfile: docker/consolidado/Dockerfile
+      dockerfile: CashFlow/docker/consolidado/Dockerfile
     container_name: cashflow-consolidado
     ports:
       - "8081:8081"
@@ -154,4 +154,3 @@ services:
 volumes:
   sqlserver_data:
   kafka_data:
-  redis_data:

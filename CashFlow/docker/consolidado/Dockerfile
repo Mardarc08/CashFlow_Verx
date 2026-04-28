@@ -4,11 +4,11 @@ EXPOSE 8081
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /
-COPY ["Consolidado/Consolidado.csproj", "Consolidado/"]
-RUN dotnet restore "Consolidado/Consolidado.csproj"
+COPY ["CashFlow/Consolidado/Consolidado.csproj", "CashFlow/Consolidado/"]
+RUN dotnet restore "CashFlow/Consolidado/Consolidado.csproj"
 
-COPY Consolidado/ Consolidado/
-WORKDIR "/Consolidado"
+COPY CashFlow/Consolidado/ CashFlow/Consolidado/
+WORKDIR "/CashFlow/Consolidado"
 RUN dotnet build -c Release -o /app/build
 
 FROM build AS publish

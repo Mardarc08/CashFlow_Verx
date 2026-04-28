@@ -4,11 +4,11 @@ EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /
-COPY ["Lancamentos/Lancamentos.csproj", "Lancamentos/"]
-RUN dotnet restore "Lancamentos/Lancamentos.csproj"
+COPY ["CashFlow/Lancamentos/Lancamentos.csproj", "CashFlow/Lancamentos/"]
+RUN dotnet restore "CashFlow/Lancamentos/Lancamentos.csproj"
 
-COPY Lancamentos/ Lancamentos/
-WORKDIR "/Lancamentos"
+COPY CashFlow/Lancamentos/ CashFlow/Lancamentos/
+WORKDIR "/CashFlow/Lancamentos"
 RUN dotnet build -c Release -o /app/build
 
 FROM build AS publish
