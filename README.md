@@ -9,15 +9,12 @@ Sistema de controle de fluxo de caixa diário com microsserviços independentes 
 - [Visão Geral](#visão-geral)
 - [Arquitetura](#arquitetura)
 - [Decisões Técnicas](#decisões-técnicas)
-- [Domínios e Capacidades](#domínios-e-capacidades)
-- [Requisitos Funcionais e Não-Funcionais](#requisitos)
 - [Pré-requisitos](#pré-requisitos)
 - [Como Rodar Localmente](#como-rodar-localmente)
 - [Endpoints da API](#endpoints-da-api)
 - [Testes](#testes)
 - [Observabilidade](#observabilidade)
 - [Infraestrutura GCP](#infraestrutura-gcp)
-- [Estimativa de Custos](#estimativa-de-custos)
 - [Evoluções Futuras](#evoluções-futuras)
 
 ---
@@ -26,12 +23,62 @@ Sistema de controle de fluxo de caixa diário com microsserviços independentes 
 
 Um comerciante precisa controlar seu fluxo de caixa diário com lançamentos de débitos e créditos, além de um relatório que disponibilize o saldo diário consolidado.
 
+### Levantamento de Domínios e Requisitos de Negócio 
+**Domínios de Negócio:** 
+Para solução à demanda apresentada, será criado o domínio de Gestão Financeira, com dois produtos (Lançamento e Consolidado Diário): 
+
+| Produto | Tipo | Resposabilidade |
+|---|---|---|
+| Lançamentos | Core Domain | Registrar débitos e créditos |
+| Consolidado Diário | Support Domain | Agregar saldo por dia |
+
+**Requisitos de Negócio**
+
+Lançamentos:
+- Registrar um lançamento (débito ou crédito) 
+- Consultar lançamentos por período
+- Validar regras de negócio (valor > 0, tipo válido, data válida, descrição obrigatória) 
+
+
+Consolidado Diário:
+- Calcular saldo consolidado do dia
+- Disponibilizar relatório de saldo por data
+- Processar eventos de lançamento de forma assíncrona 
+
+**Requisitos Funcionais**
+- O sistema deve permitir registrar lançamentos do tipo débito ou crédito com valor, descrição e data e meio de lançamento (dinheiro, pix, cartão);
+- O sistema deve retornar a lista de lançamentos por data;
+- O sistema deve disponibilizar o saldo consolidado de um dia específico;
+- O consolidado deve ser atualizado automaticamente a cada novo lançamento registrado;
+- Não é requisito permitir a exclusão de lançamentos. 
+
+**Requisitos Não-Funcionais**
+| Requisitos | Meta |
+|---|---|
+| Disponibilidade do serviço de lançamentos | 99,9% (independente do consolidado) |
+| Throughput do consolidado | 50 req/s |
+| Tolerância a perda no consolidado | ≤ 5% |
+| Latência do lançamento | < 200ms p99 |
+| Consistência do consolidado | Eventual |
+| Segurança  | Autenticação JWT em todos os endpoints |
+
+**Descisão arquitetural**
+
+Por que microsserviços? 
+
+
+Por que Event-Driven? 
+
+
+Por que não monolito? 
+- A queda de um serviço implicaria em derrubar o outro n]ao atendendo assim aos requisitos levantados.
+
 O sistema é composto por **dois microsserviços independentes**:
 
 | Serviço | Responsabilidade | Porta |
 |---|---|---|
-| `CashFlow.Lancamentos.Api` | Registrar e consultar lançamentos (débitos/créditos) | 8080 |
-| `CashFlow.Consolidado.Api` | Calcular e disponibilizar o saldo consolidado por dia | 8081 |
+| `Lancamentos.Api` | Registrar e consultar lançamentos (débitos/créditos) | 8080 |
+| `Consolidado.Api` | Calcular e disponibilizar o saldo consolidado por dia | 8081 |
 
 **Princípio de isolamento:** o serviço de lançamentos **nunca** fica indisponível por causa do consolidado. A comunicação entre eles é 100% assíncrona via mensageria.
 
@@ -39,28 +86,36 @@ O sistema é composto por **dois microsserviços independentes**:
 
 ## Arquitetura
 
+<img src="cashflow_solucao.png">
+
 ```
-┌─────────────┐     HTTPS/JWT      ┌──────────────────┐
-│   Clientes  │ ─────────────────► │   API Gateway    │
-└─────────────┘                    │  + Cloud Armor   │
+┌─────────────┐                    ┌──────────────────┐
+│   Clientes  │ ─────────────────► │     FronEnd      │
+└─────────────┘                    │    (Angular)     │
+                                   └────────┬─────────┘
+                                            │  HTTPS/JWT
+                                   ┌──────────────────┐
+                                   │   API Gateway    │
+                                   │  + Cloud Armor   │
                                    └────────┬─────────┘
                                             │
+                                            │
                       ┌─────────────────────┴──────────────────────┐
-                      │                                             │
+                      │                                            │
                ┌──────▼──────┐                            ┌────────▼───────┐
                │ Lançamentos │                            │  Consolidado   │
                │   API       │                            │     API        │
                │ (.NET 8)    │                            │  (.NET 8)      │
-               └──────┬──────┘                            └────────┬───────┘
-                      │                                            │
-                      │  Publica evento                            │ Consome evento
-                      │  (assíncrono)                              │ (BackgroundService)
-                      │                                            │
-                      └──────────► Cloud Pub/Sub ◄────────────────┘
+               └──────┬──────┘                            └───────┬────────┘
+                      │                                           │
+                      │  Publica evento                           │ Consome evento
+                      │  (assíncrono)                             │ (BackgroundService)
+                      │                                           │
+                      └──────────►   Kafka       ◄────────────────┘
                                        │
                       ┌────────────────┼────────────────┐
-                      │                │                 │
-               ┌──────▼──────┐  ┌─────▼──────┐  ┌──────▼──────┐
+                      │                │                │
+               ┌──────▼──────┐  ┌──────▼─────┐  ┌───────▼─────┐
                │  Cloud SQL  │  │ Cloud SQL  │  │  Redis      │
                │ (Lanç. DB)  │  │ (Cons. DB) │  │  (Cache)    │
                └─────────────┘  └────────────┘  └─────────────┘
@@ -69,7 +124,7 @@ O sistema é composto por **dois microsserviços independentes**:
 ### Fluxo de dados
 
 1. Cliente envia `POST /api/lancamentos` com JWT
-2. API valida, persiste no banco e publica evento `LancamentoRegistrado` no Pub/Sub
+2. API valida, persiste no banco e publica evento `LancamentoRegistrado` no Tópico Kafka
 3. Retorna `202 Accepted` imediatamente — **independente do estado do consolidado**
 4. Serviço de Consolidado consome o evento como `BackgroundService`
 5. Atualiza saldo diário e invalida o cache Redis
@@ -80,10 +135,14 @@ O sistema é composto por **dois microsserviços independentes**:
 ## Decisões Técnicas
 
 ### Por que Microsserviços?
-O requisito não-funcional crítico — *"o serviço de lançamentos não deve ficar indisponível se o consolidado cair"* — impõe isolamento de falha. Microsserviços com bancos de dados separados garantem que uma falha em um serviço não propaga para o outro.
+- Isolamento de falhas (serviços rodando independentes não gerando acoplamento entre eles)
+- Escalabilidade independente por serviço
+- Deploy independente 
 
-### Por que Event-Driven com Pub/Sub?
-Comunicação síncrona (REST direto entre serviços) criaria acoplamento temporal: se o consolidado cair, o lançamento travaria. O Pub/Sub garante que mensagens ficam retidas e são processadas quando o consumidor voltar, com retry automático e Dead Letter Topic para falhas persistentes.
+### Por que Event-Driven?
+- Lançamento publica evento → Consolidado consome quando disponível
+- Desacoplamento total entre os dois serviços
+- Naturalmente resiliente a quedas 
 
 ### Por que Cloud Run?
 - Auto-scaling transparente de 0 a N instâncias
@@ -92,7 +151,9 @@ Comunicação síncrona (REST direto entre serviços) criaria acoplamento tempor
 - Deploy via container sem gerenciar infraestrutura
 
 ### Por que Redis (Cache-aside)?
-Absorve os 50 req/s de pico no consolidado sem bater no banco a cada requisição. TTL de 5 minutos equilibra consistência eventual com performance. Falha no Redis degrada graciosamente para o banco — nunca derruba a API.
+- Absorve os 50 req/s de pico no consolidado sem bater no banco a cada requisição.
+- TTL de 5 minutos equilibra consistência eventual com performance.
+- Falha no Redis degrada graciosamente para o banco — nunca derruba a API.
 
 ### Por que Clean Architecture?
 - Regras de negócio isoladas no `Domain` — sem dependência de frameworks
@@ -103,51 +164,12 @@ Absorve os 50 req/s de pico no consolidado sem bater no banco a cada requisiçã
 - Separa intenção de escrita (`RegistrarLancamentoCommand`) de leitura (`ListarLancamentosQuery`)
 - Cada handler tem responsabilidade única
 - Facilita evolução independente de leitura e escrita
+- Implementa separadmente regras de negócio
 
-### Por que dois bancos PostgreSQL separados?
+### Por que dois bancos de dados separados?
 - Cada microsserviço é dono dos seus dados (Database per Service pattern)
 - Schema pode evoluir independentemente
 - Falha em um banco não afeta o outro
-
----
-
-## Domínios e Capacidades
-
-### Domínio: Gestão Financeira
-
-**Subdomínio Core — Lançamentos**
-- Registrar lançamento (débito ou crédito)
-- Validar regras de negócio (valor > 0, data não futura, tipo válido)
-- Consultar lançamentos por data
-- Publicar evento de lançamento registrado
-
-**Subdomínio Supporting — Consolidado Diário**
-- Consumir eventos de lançamento
-- Calcular e persistir saldo diário agregado
-- Servir consolidado com cache
-- Invalidar cache ao receber novos lançamentos
-
----
-
-## Requisitos
-
-### Funcionais
-| ID | Descrição |
-|---|---|
-| RF01 | Registrar lançamento com tipo (débito/crédito), valor, descrição e data |
-| RF02 | Consultar lançamentos por data |
-| RF03 | Consultar saldo consolidado de um dia específico |
-| RF04 | Consolidado atualizado automaticamente a cada lançamento |
-
-### Não-Funcionais
-| ID | Requisito | Meta |
-|---|---|---|
-| RNF01 | Disponibilidade do serviço de lançamentos | 99,9% — independente do consolidado |
-| RNF02 | Throughput do consolidado em pico | 50 req/s |
-| RNF03 | Tolerância a perda no consolidado | ≤ 5% |
-| RNF04 | Latência do lançamento (p99) | < 200ms |
-| RNF05 | Consistência do consolidado | Eventual |
-| RNF06 | Autenticação | JWT Bearer em todos os endpoints |
 
 ---
 
@@ -155,7 +177,7 @@ Absorve os 50 req/s de pico no consolidado sem bater no banco a cada requisiçã
 
 - [Docker](https://www.docker.com/) 24+
 - [Docker Compose](https://docs.docker.com/compose/) v2+
-- [.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) (para rodar testes localmente)
+- [.NET SDK 10.0](https://dotnet.microsoft.com/download/dotnet/10.0) (para rodar testes localmente)
 
 ---
 
@@ -164,23 +186,23 @@ Absorve os 50 req/s de pico no consolidado sem bater no banco a cada requisiçã
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/seu-usuario/cashflow.git
-cd cashflow
+git clone https://github.com/Mardarc08/CashFlow_Verx.git
+cd Cashflow_Verx
 ```
 
 ### 2. Suba toda a infraestrutura com Docker Compose
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
 Isso sobe automaticamente:
-- PostgreSQL para Lançamentos (porta 5432)
-- PostgreSQL para Consolidado (porta 5433)
+- SQLServer (porta 5433)
 - Redis (porta 6379)
-- Emulador do Google Pub/Sub (porta 8085)
+- Kafka (porta 9092)
 - API de Lançamentos (porta 8080)
 - API de Consolidado (porta 8081)
+- FrontEnd (porta 4200)
 
 Aguarde as mensagens de saúde dos containers antes de fazer requisições:
 ```
@@ -191,7 +213,7 @@ cashflow-consolidado  | Application started. Press Ctrl+C to shut down.
 ### 3. Gerar um token JWT para os testes
 
 Como é um ambiente de dev, você pode gerar um token com qualquer ferramenta JWT usando:
-- **Key:** `sua-chave-secreta-minimo-32-caracteres-aqui`
+- **Key:** `cashflow2026TesteVerx_Consultoria`
 - **Issuer:** `cashflow-api`
 - **Audience:** `cashflow-clients`
 
@@ -212,6 +234,13 @@ Ou use o site https://jwt.io com o algoritmo HS256 e o payload:
 | Lançamentos | http://localhost:8080/swagger |
 | Consolidado | http://localhost:8081/swagger |
 
+### 5. Acesse o frontEnd
+
+| Serviço | URL |
+|---|---|
+| Cashflow_dashboard | http://localhost:4200/ |
+
+**obs:** Para realização de teste inicial, a chave para geração de token foi imputada no código.
 ---
 
 ## Endpoints da API
@@ -423,24 +452,6 @@ gcloud builds submit --config=cloudbuild.yaml
 
 ---
 
-## Estimativa de Custos
-
-Estimativa mensal para ambiente de produção com carga moderada (50 req/s em pico, 8h/dia):
-
-| Recurso | Configuração | Custo Est./mês |
-|---|---|---|
-| Cloud Run (2 serviços) | 1 vCPU, 512MB, ~5M req/mês | ~US$ 15 |
-| Cloud SQL (2 instâncias) | db-f1-micro, HA, 10GB SSD | ~US$ 60 |
-| Memorystore Redis | 1GB Basic | ~US$ 35 |
-| Cloud Pub/Sub | ~5M mensagens/mês | ~US$ 2 |
-| Cloud Armor | WAF básico | ~US$ 10 |
-| Outros (logs, build, egress) | — | ~US$ 10 |
-| **Total estimado** | | **~US$ 132/mês** |
-
-> Valores baseados na tabela de preços GCP (us-east1). Produção com mais carga pode exigir instâncias maiores de Cloud SQL.
-
----
-
 ## Evoluções Futuras
 
 ### Funcionalidades
@@ -451,24 +462,9 @@ Estimativa mensal para ambiente de produção com carga moderada (50 req/s em pi
 - **Webhooks** — notificações quando o saldo diário atingir limites configurados
 
 ### Técnicas
-- **Outbox Pattern** — garantia de entrega do evento Pub/Sub mesmo com falha após persistência (eliminar o try/catch atual do handler)
 - **Idempotência no consumer** — deduplificação por `LancamentoId` para evitar dupla contagem em reprocessamentos
 - **Circuit Breaker** — Polly com circuit breaker no acesso ao Redis e ao banco
 - **Migrations automáticas via CI/CD** — rodar migrations como job separado no pipeline, não em startup
-- **gRPC interno** — se surgir necessidade de comunicação síncrona entre serviços, preferir gRPC a REST por performance
 - **Testes de integração** — usar Testcontainers para subir PostgreSQL e Redis reais nos testes
-- **Testes de carga** — k6 ou NBomber para validar os 50 req/s com menos de 5% de perda
 - **OpenTelemetry** — instrumentação padronizada para traces e métricas exportados para o GCP
 
-### Arquitetura de Transição (de legado)
-
-Se o sistema atual for um monolito legado com tudo junto (lançamentos + consolidado no mesmo processo e banco):
-
-**Fase 1 — Strangler Fig:**
-Adicionar o API Gateway na frente do monolito. Novas requisições de lançamento já vão para o microsserviço novo. Monolito ainda serve as leituras.
-
-**Fase 2 — Extração do consolidado:**
-Criar o consumer Pub/Sub. O monolito começa a publicar eventos de lançamento (dual-write temporário). Consolidado migra para o novo serviço.
-
-**Fase 3 — Desligamento do legado:**
-Após validação, monolito é descomissionado. Migração de dados históricos via script ETL.
