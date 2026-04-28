@@ -1,0 +1,157 @@
+services:
+
+  # ── Infraestrutura ──────────────────────────────────────────────────────────
+
+  # SQL Server
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: cashflow-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "CashFlow@123"
+      MSSQL_PID: Express        # edição gratuita; trocar por Developer em dev local
+      MSSQL_TCP_ENABLED: "1"        # habilita protocolo TCP/IP (conexões remotas)
+      MSSQL_IP_ADDRESS: "0.0.0.0"   # escuta em todas as interfaces, não só localhost
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./docker/sqlserver/init.sql:/docker-entrypoint-initdb/init.sql:ro
+      - ./docker/sqlserver/entrypoint.sh:/docker-entrypoint-initdb/entrypoint.sh:ro
+    # Executa o SQL Server em background e roda o script de init na sequência
+    command: >
+      bash -c "
+        /opt/mssql/bin/sqlservr &
+        bash /docker-entrypoint-initdb/entrypoint.sh &&
+        wait
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'CashFlow@123' -Q 'SELECT 1' -No || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: cashflow-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: cashflow-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # Kafka UI (opcional, para visualização)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: cashflow-kafka-ui
+    ports:
+      - "8090:8090"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: cashflow-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ── Microsserviços ──────────────────────────────────────────────────────────
+
+  lancamentos:
+    build:
+      context: .
+      dockerfile: docker/lancamentos/Dockerfile
+    container_name: cashflow-lancamentos
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=cashflow_lancamentos;User Id=sa;Password=CashFlow@123;TrustServerCertificate=True"
+      Kafka__BootstrapServers: kafka:9093
+      Kafka__Topic: lancamento-registrado
+      Jwt__Key: "cashflow2026TesteVerx_Consultoria"
+      Jwt__Issuer: cashflow-api
+      Jwt__Audience: cashflow-clients
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  consolidado:
+    build:
+      context: .
+      dockerfile: docker/consolidado/Dockerfile
+    container_name: cashflow-consolidado
+    ports:
+      - "8081:8081"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8081
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=cashflow_consolidado;User Id=sa;Password=CashFlow@123;TrustServerCertificate=True"
+      Redis__ConnectionString: redis:6379
+      Kafka__BootstrapServers: kafka:9093
+      Kafka__Topic: lancamento-registrado
+      Kafka__GroupId: consolidado-group
+      Jwt__Key: "cashflow2026TesteVerx_Consultoria"
+      Jwt__Issuer: cashflow-api
+      Jwt__Audience: cashflow-clients
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+
+  # ── Frontend Angular ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./CashFlow_app/cashflow-dashboard
+      dockerfile: Dockerfile
+    container_name: cashflow-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - lancamentos
+      - consolidado
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  kafka_data:
+  redis_data:

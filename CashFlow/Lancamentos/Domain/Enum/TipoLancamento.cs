@@ -1,6 +1,8 @@
-﻿namespace Lancamentos.Dominio.Enum
+﻿namespace Lancamentos.Domain.Enum
 {
-    public class TipoLancamento
+    public enum TipoLancamento
     {
+        Debito = 1,
+        Credito = 2
     }
 }

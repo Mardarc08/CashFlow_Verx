@@ -7,16 +7,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Application\Lancamentos\ListarLancamentosPorData\NovaPasta\**" />
     <Compile Remove="Controllers\**" />
+    <Content Remove="Application\Lancamentos\ListarLancamentosPorData\NovaPasta\**" />
     <Content Remove="Controllers\**" />
+    <EmbeddedResource Remove="Application\Lancamentos\ListarLancamentosPorData\NovaPasta\**" />
     <EmbeddedResource Remove="Controllers\**" />
+    <None Remove="Application\Lancamentos\ListarLancamentosPorData\NovaPasta\**" />
     <None Remove="Controllers\**" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AspNetCore.HealthChecks.SqlServer" Version="9.0.0" />
+    <PackageReference Include="Confluent.Kafka" Version="2.14.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-    <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.33.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
     <PackageReference Include="MediatR" Version="14.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
@@ -25,18 +31,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.6" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Api\Endpoints\" />
-    <Folder Include="Api\Middlewares\" />
-    <Folder Include="Application\Events\" />
-    <Folder Include="Application\Lancamento\ConsultarLancamento\" />
-    <Folder Include="Application\Lancamento\RegistrarLancamento\" />
-    <Folder Include="Infrastructure\Messaging\" />
-    <Folder Include="Infrastructure\Persistence\" />
   </ItemGroup>
 
 </Project>
