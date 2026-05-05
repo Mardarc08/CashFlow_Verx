@@ -97,13 +97,24 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddHealthChecks()
     .AddSqlServer(sqlConnectionString);
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")  // Porta do Angular
+              .AllowAnyMethod()      // GET, POST, PUT, DELETE, OPTIONS
+              .AllowAnyHeader()      // Authorization, Content-Type, etc.
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 
 // Middlewares
-//app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<ExceptionMiddleware>();
 
-
+app.UseCors("AllowAngular");
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -121,16 +132,9 @@ app.MapHealthChecks("/health");
 // Migrations automáticas (dev) 
 if (app.Environment.IsDevelopment())
 {
-    try{
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
-    }
-    catch(Exception ex)
-    {
-        var logger = app.Services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Erro ao aplicar migrações automáticas");
-    }
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
 }
 
 app.Run();

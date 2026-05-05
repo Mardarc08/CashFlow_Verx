@@ -118,15 +118,26 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddHealthChecks()
     .AddSqlServer(sqlConnectionString).AddRedis(builder.Configuration["Redis:ConnectionString"]!);
 
-var app = builder.Build();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")  // Porta do Angular
+              .AllowAnyMethod()      // GET, POST, PUT, DELETE, OPTIONS
+              .AllowAnyHeader()      // Authorization, Content-Type, etc.
+              .AllowCredentials();
+    });
+});
 
-// ── Middlewares ──────────────────────────────────────────────────────────────
+var app = builder.Build();
+app.UseCors("AllowAngular");
+
 if (app.Environment.IsDevelopment())
 {
 app.UseSwagger();
 app.UseSwaggerUI();
-}
 
+}
 app.UseAuthentication();
 app.UseAuthorization();
 
